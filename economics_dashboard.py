@@ -10,7 +10,7 @@ st.set_page_config(page_title="U.S. State Unemployment Dashboard", layout="wide"
 st.title("U.S. Unemployment Rate by State")
 
 st.markdown("""
-This dashboard visualizes the **historical unemployment rate** across **U.S. states**, using official data from the **Federal Reserve Economic Database (FRED)**.
+This dashboard visualizes the **historical unemployment rate** across **U.S. states** and **Louisiana parishes**, using official data from the **Federal Reserve Economic Database (FRED)**.
 """)
 
 # --- API ---
@@ -46,18 +46,55 @@ def get_series(series_id):
         st.error(f"Failed to fetch data for series {series_id}: {e}")
         return pd.DataFrame()
 
-# --- STATE SELECTION ---
-st.sidebar.header("Filter")
-states_selected = st.sidebar.multiselect(
-    "Select states to compare:",
-    list(STATE_SERIES_IDS.keys()),
-    default=["Louisiana", "Texas", "California"]
-)
+# ========= SIDEBAR =========
 
-# --- Load Data for State-Level Analysis ---
+# --- STATE LEVEL ANALYSIS SIDEBAR ---
+st.sidebar.header("State Level Analysis")
+
+# Dropdown multiselect with "Select All States" option.
+states = list(STATE_SERIES_IDS.keys())
+state_options = ["Select All States"] + states
+selected_state_options = st.sidebar.multiselect(
+    "Select states to compare:",
+    options=state_options,
+    default=["Louisiana", "Texas", "California"],
+    key="state_select"
+)
+if "Select All States" in selected_state_options:
+    states_selected = states
+else:
+    states_selected = selected_state_options
+
+# Compute available date range from only the selected state series.
+all_state_dates = [get_series(STATE_SERIES_IDS[s])["Date"] for s in states_selected if not get_series(STATE_SERIES_IDS[s]).empty]
+if all_state_dates:
+    common_start = max(series.min() for series in all_state_dates)
+    common_end = min(series.max() for series in all_state_dates)
+else:
+    common_start, common_end = None, None
+
+if common_start and common_end:
+    start_date = st.sidebar.date_input("Start date", common_start, min_value=common_start, max_value=common_end, key="state_start_date")
+    end_date = st.sidebar.date_input("End date", common_end, min_value=common_start, max_value=common_end, key="state_end_date")
+else:
+    start_date, end_date = None, None
+
+# Insert gap between State Level and County Level sections in sidebar.
+st.sidebar.markdown("<br><br>", unsafe_allow_html=True)
+
+# --- COUNTY LEVEL ANALYSIS SIDEBAR ---
+st.sidebar.header("County Level Analysis")
+# (County-level options will be set in the main content after loading county data.)
+
+# ========= MAIN CONTENT =========
+
+# --- STATE-LEVEL ANALYSIS ---
+st.write('---')
+st.markdown("## State-Level Unemployment Analysis")
+
+# Load national series for US aggregate and state series.
 us_df = get_series("UNRATE").rename(columns={"Unemployment Rate": "United States"})
 comparison_df = us_df[["Date", "United States"]].copy()
-
 for state in states_selected:
     series_id = STATE_SERIES_IDS[state]
     state_data = get_series(series_id)
@@ -65,21 +102,13 @@ for state in states_selected:
         state_data = state_data.rename(columns={"Unemployment Rate": state})
         comparison_df = pd.merge(comparison_df, state_data, on="Date", how="left")
 
-# --- Calculate Common Date Range ---
-all_dates = [us_df["Date"]] + [get_series(STATE_SERIES_IDS[s])["Date"] for s in states_selected]
-common_start = max(df.min() for df in all_dates)
-common_end = min(df.max() for df in all_dates)
+# Filter the state-level data using the selected date range.
+if start_date and end_date:
+    mask = (comparison_df["Date"] >= pd.to_datetime(start_date)) & (comparison_df["Date"] <= pd.to_datetime(end_date))
+    comparison_df = comparison_df.loc[mask]
 
-start_date = st.sidebar.date_input("Start date", common_start, min_value=common_start, max_value=common_end)
-end_date = st.sidebar.date_input("End date", common_end, min_value=common_start, max_value=common_end)
-
-mask = (comparison_df["Date"] >= pd.to_datetime(start_date)) & (comparison_df["Date"] <= pd.to_datetime(end_date))
-comparison_df = comparison_df.loc[mask]
-
-# --- PLOTLY STATE-LEVEL CHART ---
+# Build the state-level line chart.
 fig = go.Figure()
-
-# U.S. line
 fig.add_trace(go.Scatter(
     x=comparison_df["Date"],
     y=comparison_df["United States"],
@@ -87,8 +116,6 @@ fig.add_trace(go.Scatter(
     name='United States',
     line=dict(width=3, dash='dash')
 ))
-
-# State lines
 for state in states_selected:
     fig.add_trace(go.Scatter(
         x=comparison_df["Date"],
@@ -96,7 +123,6 @@ for state in states_selected:
         mode='lines',
         name=state
     ))
-
 fig.update_layout(
     template="plotly_white",
     title="Unemployment Rate by State",
@@ -106,11 +132,11 @@ fig.update_layout(
     height=500,
     legend=dict(orientation="h", y=-0.2)
 )
-
 st.plotly_chart(fig, use_container_width=True)
 
-# --- TABLE + DOWNLOAD ---
-with st.expander("📄 Show Data Table & Download"):
+st.write('---')
+
+with st.expander("📄 Show Data Table & Download (State Level)"):
     st.dataframe(comparison_df)
     csv = comparison_df.to_csv(index=False).encode("utf-8")
     st.download_button(
@@ -120,107 +146,104 @@ with st.expander("📄 Show Data Table & Download"):
         mime="text/csv"
     )
 
-# --- STATE-LEVEL MAP SECTION ---
-if states_selected:
-    # Get the latest unemployment rate for selected states
-    latest_values = []
-    latest_date = comparison_df["Date"].max()
+st.write('---')
 
-    for state in states_selected:
-        try:
-            latest_rate = comparison_df.loc[comparison_df["Date"] == latest_date, state].values[0]
-            latest_values.append({
-                "State": state,
-                "Rate": round(latest_rate, 2)
-            })
-        except:
-            continue
-
-    # Create DataFrame for the map
-    map_df = pd.DataFrame(latest_values)
-    
-    # Convert full state names to USPS codes for Plotly
-    state_abbr = {
-        "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
-        "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "District of Columbia": "DC",
-        "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL",
-        "Indiana": "IN", "Iowa": "IA", "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA",
-        "Maine": "ME", "Maryland": "MD", "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN",
-        "Mississippi": "MS", "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
-        "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
-        "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK", "Oregon": "OR",
-        "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD",
-        "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT", "Virginia": "VA",
-        "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY"
-    }
-    map_df["State Code"] = map_df["State"].map(state_abbr)
-
-    # Build modern state-level map
-    map_fig = go.Figure(data=go.Choropleth(
-        locations=map_df["State Code"],
-        z=map_df["Rate"],
-        locationmode='USA-states',
-        colorscale="Blues",
-        autocolorscale=False,
-        colorbar=dict(title="Rate (%)", ticksuffix="%"),
-        marker_line_color="white",
-        marker_line_width=0.5,
-        text=map_df.apply(lambda row: f"{row['State']}<br>{row['Rate']}%", axis=1),
-        hoverinfo="text"
-    ))
-
-    map_fig.update_layout(
-        template="plotly_dark",
-        geo=dict(
-            scope='usa',
-            projection=go.layout.geo.Projection(type='albers usa'),
-            showlakes=True,
-            lakecolor='rgba(255, 255, 255, 0.2)'
-        ),
-        title=dict(
-            text=f"Unemployment Rate by State – {latest_date.date()}",
-            x=0.5,
-            font=dict(size=20)
-        ),
-        margin=dict(l=20, r=20, t=60, b=20),
-        height=600
+# --- STATE-LEVEL CHOROPLETH MAP WITH YEAR SLIDER ---
+if states_selected and common_start and common_end:
+    selected_year_state = st.slider(
+        "Select Year for State Map",
+        min_value=common_start.year,
+        max_value=common_end.year,
+        value=common_start.year,
+        step=1,
+        key="state_year_slider"
     )
-
-    st.plotly_chart(map_fig, use_container_width=True)
+    # Filter state-level data for the selected year.
+    df_year = comparison_df[comparison_df["Date"].dt.year == selected_year_state]
+    
+    state_map_data = []
+    for state in states_selected:
+        if state in df_year.columns and not df_year[state].dropna().empty:
+            # Use the average unemployment rate for the state in the selected year.
+            avg_rate = df_year[state].mean()
+            state_map_data.append({"State": state, "Rate": round(avg_rate, 2)})
+    if state_map_data:
+        map_df = pd.DataFrame(state_map_data)
+        state_abbr = {
+            "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
+            "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "District of Columbia": "DC",
+            "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL",
+            "Indiana": "IN", "Iowa": "IA", "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA",
+            "Maine": "ME", "Maryland": "MD", "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN",
+            "Mississippi": "MS", "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
+            "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+            "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK", "Oregon": "OR",
+            "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD",
+            "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT", "Virginia": "VA",
+            "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY"
+        }
+        map_df["State Code"] = map_df["State"].map(state_abbr)
+        map_fig = go.Figure(data=go.Choropleth(
+            locations=map_df["State Code"],
+            z=map_df["Rate"],
+            locationmode='USA-states',
+            colorscale="Blues",
+            autocolorscale=False,
+            colorbar=dict(title="Rate (%)", ticksuffix="%"),
+            marker_line_color="white",
+            marker_line_width=0.5,
+            text=map_df.apply(lambda row: f"{row['State']}<br>{row['Rate']}%", axis=1),
+            hoverinfo="text"
+        ))
+        map_fig.update_layout(
+            template="plotly_dark",
+            geo=dict(
+                scope='usa',
+                projection=go.layout.geo.Projection(type='albers usa'),
+                showlakes=True,
+                lakecolor='rgba(255, 255, 255, 0.2)'
+            ),
+            title=dict(
+                text=f"Unemployment Rate by State in {selected_year_state}",
+                x=0.5,
+                font=dict(size=20)
+            ),
+            margin=dict(l=20, r=20, t=60, b=20),
+            height=600
+        )
+        st.plotly_chart(map_fig, use_container_width=True)
+    else:
+        st.warning("No valid state data available for the selected year.")
 else:
     st.info("Please select a state to start data visualization.")
 
-# --- COUNTY-LEVEL ANALYSIS ---
+st.write('---')
+
+# --- COUNTY-LEVEL (PARISH) ANALYSIS ---
 st.markdown("## County-Level (Parish) Unemployment Analysis")
 st.markdown("""
-This interactive map displays the unemployment rate by parish.
-Use the slider below to select a year between 1990 and 2025.
+This section shows a time series of unemployment rates for selected parishes—filtered by a start and end date—and an interactive map for a specific year.
 """)
 
+# Load county data
 @st.cache_data
 def load_county_data():
     try:
-        # Load your cleaned Louisiana parish-level data.
         df = pd.read_csv("merged_national_county_1990_2025.csv")
     except Exception as e:
         st.error(f"Failed to load county data: {e}")
         return pd.DataFrame()
     
-    # Strip extra whitespace from column names.
     df.columns = df.columns.str.strip()
-    
-    # Ensure the 'Parish' column is stripped of extra whitespace.
     if "Parish" in df.columns:
         df["Parish"] = df["Parish"].str.strip()
     else:
         st.error("The county data must contain a 'Parish' column.")
         return pd.DataFrame()
     
-    # Rename "Unemployment rate" to "Unemployment Rate" for consistency.
     if "Unemployment rate" in df.columns:
         df.rename(columns={"Unemployment rate": "Unemployment Rate"}, inplace=True)
     
-    # Process the 'Date' column.
     if "Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Date"], errors='coerce', infer_datetime_format=True)
         if df["Date"].isnull().all():
@@ -233,128 +256,153 @@ def load_county_data():
         st.error("The county data must contain either a 'Date' or 'year' column.")
         return pd.DataFrame()
     
-    # Mapping from Louisiana parish names to FIPS codes.
     LA_PARISH_FIPS = {
-        "Acadia": "22001",
-        "Allen": "22003",
-        "Ascension": "22005",
-        "Assumption": "22007",
-        "Avoyelles": "22009",
-        "Beauregard": "22011",
-        "Bienville": "22013",
-        "Bossier": "22015",
-        "Caddo": "22017",
-        "Calcasieu": "22019",
-        "Caldwell": "22021",
-        "Cameron": "22023",
-        "Catahoula": "22025",
-        "Claiborne": "22027",
-        "Concordia": "22029",
-        "De Soto": "22031",
-        "East Baton Rouge": "22033",
-        "East Carroll": "22035",
-        "East Feliciana": "22037",
-        "Evangeline": "22039",
-        "Franklin": "22041",
-        "Grant": "22043",
-        "Iberia": "22045",
-        "Iberville": "22047",
-        "Jackson": "22049",
-        "Jefferson": "22051",
-        "Jefferson Davis": "22053",
-        "Lafayette": "22055",
-        "Lafourche": "22057",
-        "LaSalle": "22059",
-        "Lincoln": "22061",
-        "Livingston": "22063",
-        "Madison": "22065",
-        "Morehouse": "22067",
-        "Natchitoches": "22069",
-        "Orleans": "22071",
-        "Ouachita": "22073",
-        "Plaquemines": "22075",
-        "Pointe Coupee": "22077",
-        "Rapides": "22079",
-        "Red River": "22081",
-        "Richland": "22083",
-        "Sabine": "22085",
-        "St. Bernard": "22087",
-        "St. Charles": "22089",
-        "St. Helena": "22091",
-        "St. James": "22093",
-        "St. John the Baptist": "22095",
-        "St. Landry": "22097",
-        "St. Martin": "22099",
-        "St. Mary": "22101",
-        "St. Tammany": "22103",
-        "Tangipahoa": "22105",
-        "Tensas": "22107",
-        "Terrebonne": "22109",
-        "Union": "22111",
-        "Vermilion": "22113",
-        "Vernon": "22115",
-        "Washington": "22117",
-        "Webster": "22119",
-        "West Baton Rouge": "22121",
-        "West Carroll": "22123",
-        "West Feliciana": "22125",
-        "Winn": "22127"
+        "Acadia": "22001", "Allen": "22003", "Ascension": "22005", "Assumption": "22007",
+        "Avoyelles": "22009", "Beauregard": "22011", "Bienville": "22013", "Bossier": "22015",
+        "Caddo": "22017", "Calcasieu": "22019", "Caldwell": "22021", "Cameron": "22023",
+        "Catahoula": "22025", "Claiborne": "22027", "Concordia": "22029", "De Soto": "22031",
+        "East Baton Rouge": "22033", "East Carroll": "22035", "East Feliciana": "22037",
+        "Evangeline": "22039", "Franklin": "22041", "Grant": "22043", "Iberia": "22045",
+        "Iberville": "22047", "Jackson": "22049", "Jefferson": "22051", "Jefferson Davis": "22053",
+        "Lafayette": "22055", "Lafourche": "22057", "LaSalle": "22059", "Lincoln": "22061",
+        "Livingston": "22063", "Madison": "22065", "Morehouse": "22067", "Natchitoches": "22069",
+        "Orleans": "22071", "Ouachita": "22073", "Plaquemines": "22075", "Pointe Coupee": "22077",
+        "Rapides": "22079", "Red River": "22081", "Richland": "22083", "Sabine": "22085",
+        "St. Bernard": "22087", "St. Charles": "22089", "St. Helena": "22091", "St. James": "22093",
+        "St. John the Baptist": "22095", "St. Landry": "22097", "St. Martin": "22099",
+        "St. Mary": "22101", "St. Tammany": "22103", "Tangipahoa": "22105", "Tensas": "22107",
+        "Terrebonne": "22109", "Union": "22111", "Vermilion": "22113", "Vernon": "22115",
+        "Washington": "22117", "Webster": "22119", "West Baton Rouge": "22121",
+        "West Carroll": "22123", "West Feliciana": "22125", "Winn": "22127"
     }
-    # Map Parish names to FIPS codes and drop rows where mapping fails.
     df["fips"] = df["Parish"].map(LA_PARISH_FIPS)
     df = df.dropna(subset=["fips"])
-    
     return df
 
-# In your county-level section of the app:
 county_df = load_county_data()
 
-if not county_df.empty:
-    min_year_county = int(county_df["year"].min())
-    max_year_county = int(county_df["year"].max())
+if county_df.empty:
+    st.error("County-level data could not be loaded.")
+else:
+# Get the list of available parishes from the county data.
+    parishes = sorted(county_df["Parish"].unique())
+# Create a list of options that includes a "Select All Parishes" option.
+county_options = ["Select All Parishes"] + parishes
+
+# Use a multiselect widget with the new options. 
+selected_county_options = st.sidebar.multiselect(
+    "Select Parishes to Compare:",
+    options=county_options,
+    default=["St. Tammany", "Tangipahoa", "Livingston", "Washington", "St. Helena"],
+    key="county_parishes_multiselect"
+)
+
+# If "Select All Parishes" is selected, override the selection to include all parishes.
+if "Select All Parishes" in selected_county_options:
+    selected_parishes = parishes
+else:
+    selected_parishes = selected_county_options
+
     
-    selected_year_county = st.slider(
-        "Select Year for Parish Data",
-        min_value=min_year_county,
-        max_value=max_year_county,
-        value=min_year_county,
-        step=1,
-        key="county_year_slider"
+    county_common_start = county_df["Date"].min().date()
+    county_common_end = county_df["Date"].max().date()
+    county_start_date = st.sidebar.date_input(
+        "County Start Date",
+        value=county_common_start,
+        min_value=county_common_start,
+        max_value=county_common_end,
+        key="county_start_date"
+    )
+    county_end_date = st.sidebar.date_input(
+        "County End Date",
+        value=county_common_end,
+        min_value=county_common_start,
+        max_value=county_common_end,
+        key="county_end_date"
     )
     
-    filtered_county_df = county_df[county_df["year"] == selected_year_county]
-    
-    if filtered_county_df.empty:
-        st.warning("No parish data available for the selected year.")
+    if not selected_parishes:
+        st.info("Please select a parish to analyze.")
     else:
-        @st.cache_data
-        def load_geojson():
-            url = "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json"
-            response = requests.get(url)
-            geojson = response.json()
-            return geojson
+        filtered_line_df = county_df[
+            (county_df["Parish"].isin(selected_parishes)) &
+            (county_df["Date"] >= pd.to_datetime(county_start_date)) &
+            (county_df["Date"] <= pd.to_datetime(county_end_date))
+        ]
+        if not filtered_line_df.empty:
+            fig_line = px.line(
+                filtered_line_df,
+                x="Date",
+                y="Unemployment Rate",
+                color="Parish",
+                title="Unemployment Rate by Parish Over Time"
+            )
+            st.plotly_chart(fig_line, use_container_width=True)
+        else:
+            st.warning("No data available for the selected parishes and date range.")
+    
+    st.write('---')
+    
+    # Slider for selecting a specific year for the choropleth map.
+selected_year_county = st.slider(
+    "Select Year for Parish Map",
+    min_value=int(county_df["year"].min()),
+    max_value=int(county_df["year"].max()),
+    value=int(county_df["year"].min()),
+    step=1,
+    key="county_year_slider"
+)
 
-        counties_geojson = load_geojson()
+# Filter the county data for the selected year and only for the selected parishes.
+filtered_map_df = county_df[
+    (county_df["year"] == selected_year_county) &
+    (county_df["Parish"].isin(selected_parishes))
+]
 
-        fig_county = px.choropleth(
-            filtered_county_df,
-            geojson=counties_geojson,
-            locations='fips',               # Use the mapped FIPS codes
-            color='Unemployment Rate',      # Numeric column with unemployment rates
-            color_continuous_scale="Viridis",
-            range_color=(filtered_county_df["Unemployment Rate"].min(), 
-                         filtered_county_df["Unemployment Rate"].max()),
-            scope="usa",
-            labels={'Unemployment Rate': 'Unemployment Rate (%)'}
-        )
-
-        fig_county.update_geos(fitbounds="locations", visible=False)
-        fig_county.update_layout(
-            title_text=f"Unemployment Rate by Parish in {selected_year_county}",
-            margin={"r": 0, "t": 30, "l": 0, "b": 0}
-        )
-
-        st.plotly_chart(fig_county, use_container_width=True)
+if filtered_map_df.empty:
+    st.warning("No parish data available for the selected year and parishes.")
 else:
-    st.error("County-level data could not be loaded.")
+    @st.cache_data
+    def load_geojson():
+        url = "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json"
+        response = requests.get(url)
+        geojson = response.json()
+        # Filter to include only Louisiana (FIPS codes starting with "22")
+        geojson["features"] = [
+            feature for feature in geojson["features"]
+            if feature["id"].startswith("22")
+        ]
+        return geojson
+
+    counties_geojson = load_geojson()
+
+    fig_county = px.choropleth(
+        filtered_map_df,
+        geojson=counties_geojson,
+        locations='fips',
+        color='Unemployment Rate',
+        color_continuous_scale="Viridis",
+        range_color=(
+            filtered_map_df["Unemployment Rate"].min(),
+            filtered_map_df["Unemployment Rate"].max()
+        ),
+        scope="usa",
+        labels={'Unemployment Rate': 'Unemployment Rate (%)'},
+        title=f"Unemployment Rate by Parish in {selected_year_county}",
+        hover_name="Parish"  # This ensures the parish name appears on hover.
+    )
+
+    fig_county.update_geos(fitbounds="locations", visible=False)
+    fig_county.update_layout(
+        template="plotly_dark",
+        geo=dict(
+            scope='usa',
+            projection=go.layout.geo.Projection(type='albers usa'),
+            showlakes=True,
+            lakecolor='rgba(255, 255, 255, 0.2)'
+        ),
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+    st.plotly_chart(fig_county, use_container_width=True)
+
 
