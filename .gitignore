@@ -1,0 +1,13 @@
+# .gitignore
+.streamlit/secrets.toml
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore Jupyter notebooks if any
+*.ipynb_checkpoints/
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
