@@ -1,1 +1,1 @@
-web: sh setup.sh && streamlit run economics_dashboard_3cols.py
+web: sh setup.sh && streamlit run economics_dashboard_Heroku.py
