@@ -25,13 +25,20 @@ with col2:
 # API_KEY = st.secrets["FRED"]["api_key"]
 # fred = Fred(api_key=API_KEY)
 
+import os
+import pandas as pd
+import streamlit as st
+from fredapi import Fred
+
 # Access the FRED API key
-fred = os.environ.get('FRED_API_KEY')
+API_KEY = os.environ.get('FRED_API_KEY')
 
 # Check if it's correctly set
-if fred is None:
+if API_KEY is None:
     raise ValueError("FRED API key is not set in the environment variables.")
 
+# Initialize the Fred object with your API key
+fred = Fred(api_key=API_KEY)
 
 # --- STATE SERIES MAPPING ---
 STATE_SERIES_IDS = {
@@ -54,13 +61,22 @@ STATE_SERIES_IDS = {
 @st.cache_data
 def get_series(series_id):
     try:
+        # Fetch the series data from FRED
         data = fred.get_series(series_id)
+        
+        # Convert the data into a DataFrame and reset the index
         df = pd.DataFrame(data).reset_index()
+        
+        # Rename columns for clarity
         df.columns = ["Date", "Unemployment Rate"]
+        
+        # Return the DataFrame
         return df
     except Exception as e:
+        # Handle errors and display a message
         st.error(f"Failed to fetch data for series {series_id}: {e}")
         return pd.DataFrame()
+
 
 # Create three-column layout
 col1, col2, col3 = st.columns([1, 6, 3])
