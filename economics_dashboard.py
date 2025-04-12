@@ -411,6 +411,3 @@ else:
         st.plotly_chart(fig_map, use_container_width=True)
     else:
         st.warning("No parish data available for the selected year.")
-
-
-
