@@ -6,15 +6,19 @@ import requests
 from fredapi import Fred
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="U.S. State Unemployment Dashboard", layout="wide")
+st.set_page_config(page_title="Louisiana Labor Force Dashboard", layout="wide")
 
 # --- Create three-column layout ---
 col1, col2, col3 = st.columns([1, 6, 3])
 
 # --- Centered header image using columns ---
 image_path = "LaborDashboard.webp"  # Assuming the image is stored in the same folder as your script
+
+
+
 with col2:
     st.image(image_path, use_container_width=True)
+    st.header("Louisiana Labor Force Dashboard")
 
 # --- API ---
 API_KEY = st.secrets["FRED"]["api_key"]
@@ -70,7 +74,7 @@ with col3:
 
         ---
 
-        ### 🧰 **Technologies & Tools**
+        ### 🧰 **Libraries & Tools**
         - **Streamlit** – Interactive interface framework
         - **pandas**, **numpy** – Data wrangling and manipulation
         - **plotly** – Interactive charts and maps
@@ -84,13 +88,13 @@ with col3:
 
         ---
 
-        **Asif Rasool, Ph.D.**
-        Research Economist, Southeastern Louisiana University
-        📍 1514 Martens Drive, Hammond, LA 70401
-        📞 985-549-3831
-        📧 [asif.rasool@southeastern.edu](mailto:asif.rasool@southeastern.edu)
-        🌐 [Work Website](https://www.southeastern.edu/employee/asif-rasool/)
-        🔗 [GitHub Repository](https://github.com/Asif-Rasool)
+        **Asif Rasool, Ph.D.**  
+        Research Economist, Southeastern Louisiana University  
+        📍 1514 Martens Drive, Hammond, LA 70401  
+        📞 985-549-3831  
+        📧 [asif.rasool@southeastern.edu](mailto:asif.rasool@southeastern.edu)  
+        🌐 [Work Website](https://www.southeastern.edu/employee/asif-rasool/)  
+        🔗 [GitHub Repository](https://github.com/Asif-Rasool)  
 
         _Last updated: April 2025_
         """)
