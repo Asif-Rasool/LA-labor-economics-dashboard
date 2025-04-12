@@ -222,7 +222,8 @@ st.write('---')
 # --- COUNTY-LEVEL (PARISH) ANALYSIS ---
 st.markdown("## County-Level (Parish) Unemployment Analysis")
 st.markdown("""
-This section shows a time series of unemployment rates for selected parishes—filtered by a start and end date—and an interactive map for a specific year.
+This section shows a time series and a parish-level map for the **selected metric** 
+across Louisiana parishes. Use the sidebar to filter parishes, date range, and choose which metric to view.
 """)
 
 # Load county data
@@ -284,125 +285,132 @@ county_df = load_county_data()
 if county_df.empty:
     st.error("County-level data could not be loaded.")
 else:
-# Get the list of available parishes from the county data.
+    # === Sidebar Filters ===
+
+    # === Metric Selection (in sidebar, single select) ===
+    metric_options = ["Unemployment Rate", "Labor force size", "Employment", "Unemployment"]
+    selected_metric = st.sidebar.selectbox(
+        "Select a labor market metric:",
+        options=metric_options,
+        index=0
+    )
     parishes = sorted(county_df["Parish"].unique())
-# Create a list of options that includes a "Select All Parishes" option.
-county_options = ["Select All Parishes"] + parishes
+    county_options = ["Select All Parishes"] + parishes
+    selected_county_options = st.sidebar.multiselect(
+        "Select Parishes to Compare:",
+        options=county_options,
+        default=["St. Tammany", "Tangipahoa", "Livingston", "Washington", "St. Helena"],
+        key="county_parishes_multiselect"
+    )
+    if "Select All Parishes" in selected_county_options:
+        selected_parishes = parishes
+    else:
+        selected_parishes = selected_county_options
 
-# Use a multiselect widget with the new options. 
-selected_county_options = st.sidebar.multiselect(
-    "Select Parishes to Compare:",
-    options=county_options,
-    default=["St. Tammany", "Tangipahoa", "Livingston", "Washington", "St. Helena"],
-    key="county_parishes_multiselect"
-)
-
-# If "Select All Parishes" is selected, override the selection to include all parishes.
-if "Select All Parishes" in selected_county_options:
-    selected_parishes = parishes
-else:
-    selected_parishes = selected_county_options
-
-    
     county_common_start = county_df["Date"].min().date()
     county_common_end = county_df["Date"].max().date()
     county_start_date = st.sidebar.date_input(
-        "County Start Date",
-        value=county_common_start,
-        min_value=county_common_start,
-        max_value=county_common_end,
-        key="county_start_date"
+        "County Start Date", value=county_common_start,
+        min_value=county_common_start, max_value=county_common_end
     )
     county_end_date = st.sidebar.date_input(
-        "County End Date",
-        value=county_common_end,
-        min_value=county_common_start,
-        max_value=county_common_end,
-        key="county_end_date"
+        "County End Date", value=county_common_end,
+        min_value=county_common_start, max_value=county_common_end
     )
-    
-    if not selected_parishes:
-        st.info("Please select a parish to analyze.")
+
+
+
+    # === Time-Series Chart ===
+    st.markdown("### 📈 Time-Series Chart")
+
+    filtered_line_df = county_df[
+        (county_df["Parish"].isin(selected_parishes)) &
+        (county_df["Date"] >= pd.to_datetime(county_start_date)) &
+        (county_df["Date"] <= pd.to_datetime(county_end_date))
+    ]
+
+    if not filtered_line_df.empty:
+        fig_line = go.Figure()
+        for parish in selected_parishes:
+            df_parish = filtered_line_df[filtered_line_df["Parish"] == parish]
+            if selected_metric in df_parish.columns:
+                fig_line.add_trace(go.Scatter(
+                    x=df_parish["Date"],
+                    y=df_parish[selected_metric],
+                    mode='lines',
+                    name=parish
+                ))
+        fig_line.update_layout(
+            title=f"{selected_metric} Over Time",
+            xaxis_title="Date",
+            yaxis_title=selected_metric,
+            hovermode="x unified",
+            template="plotly_white",
+            height=500,
+            legend=dict(orientation="h", y=-0.3)
+        )
+        st.plotly_chart(fig_line, use_container_width=True)
+
+        with st.expander("📄 Show Data Table & Download"):
+            st.dataframe(filtered_line_df[["Date", "Parish", selected_metric]])
+            csv = filtered_line_df.to_csv(index=False).encode("utf-8")
+            st.download_button("Download CSV", csv, "parish_labor_metrics.csv", "text/csv")
     else:
-        filtered_line_df = county_df[
-            (county_df["Parish"].isin(selected_parishes)) &
-            (county_df["Date"] >= pd.to_datetime(county_start_date)) &
-            (county_df["Date"] <= pd.to_datetime(county_end_date))
-        ]
-        if not filtered_line_df.empty:
-            fig_line = px.line(
-                filtered_line_df,
-                x="Date",
-                y="Unemployment Rate",
-                color="Parish",
-                title="Unemployment Rate by Parish Over Time"
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
-        else:
-            st.warning("No data available for the selected parishes and date range.")
-    
+        st.warning("No data available for selected filters.")
+
     st.write('---')
-    
-    # Slider for selecting a specific year for the choropleth map.
-selected_year_county = st.slider(
-    "Select Year for Parish Map",
-    min_value=int(county_df["year"].min()),
-    max_value=int(county_df["year"].max()),
-    value=int(county_df["year"].min()),
-    step=1,
-    key="county_year_slider"
-)
 
-# Filter the county data for the selected year and only for the selected parishes.
-filtered_map_df = county_df[
-    (county_df["year"] == selected_year_county) &
-    (county_df["Parish"].isin(selected_parishes))
-]
+    # === Choropleth Map ===
+    st.markdown("### 🗺️ Parish-Level Choropleth Map")
 
-if filtered_map_df.empty:
-    st.warning("No parish data available for the selected year and parishes.")
-else:
+    selected_year = st.slider(
+        "Select Year for Map",
+        min_value=int(county_df["year"].min()),
+        max_value=int(county_df["year"].max()),
+        value=int(county_df["year"].min()),
+        step=1
+    )
+
+    filtered_map_df = county_df[
+        (county_df["year"] == selected_year) &
+        (county_df["Parish"].isin(selected_parishes))
+    ]
+
     @st.cache_data
     def load_geojson():
         url = "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json"
         response = requests.get(url)
         geojson = response.json()
-        # Filter to include only Louisiana (FIPS codes starting with "22")
         geojson["features"] = [
-            feature for feature in geojson["features"]
-            if feature["id"].startswith("22")
+            f for f in geojson["features"] if f["id"].startswith("22")
         ]
         return geojson
 
-    counties_geojson = load_geojson()
+    if not filtered_map_df.empty:
+        geojson_data = load_geojson()
+        fig_map = px.choropleth(
+            filtered_map_df,
+            geojson=geojson_data,
+            locations="fips",
+            color=selected_metric,
+            color_continuous_scale="Viridis",
+            range_color=(
+                filtered_map_df[selected_metric].min(),
+                filtered_map_df[selected_metric].max()
+            ),
+            scope="usa",
+            labels={selected_metric: selected_metric},
+            title=f"{selected_metric} by Parish in {selected_year}",
+            hover_name="Parish"
+        )
+        fig_map.update_geos(fitbounds="locations", visible=False)
+        fig_map.update_layout(
+            template="plotly_dark",
+            margin=dict(l=20, r=20, t=60, b=20)
+        )
+        st.plotly_chart(fig_map, use_container_width=True)
+    else:
+        st.warning("No parish data available for the selected year.")
 
-    fig_county = px.choropleth(
-        filtered_map_df,
-        geojson=counties_geojson,
-        locations='fips',
-        color='Unemployment Rate',
-        color_continuous_scale="Viridis",
-        range_color=(
-            filtered_map_df["Unemployment Rate"].min(),
-            filtered_map_df["Unemployment Rate"].max()
-        ),
-        scope="usa",
-        labels={'Unemployment Rate': 'Unemployment Rate (%)'},
-        title=f"Unemployment Rate by Parish in {selected_year_county}",
-        hover_name="Parish"  # This ensures the parish name appears on hover.
-    )
-
-    fig_county.update_geos(fitbounds="locations", visible=False)
-    fig_county.update_layout(
-        template="plotly_dark",
-        geo=dict(
-            scope='usa',
-            projection=go.layout.geo.Projection(type='albers usa'),
-            showlakes=True,
-            lakecolor='rgba(255, 255, 255, 0.2)'
-        ),
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-    st.plotly_chart(fig_county, use_container_width=True)
 
 
