@@ -2,8 +2,8 @@
 
 This interactive [Streamlit](https://streamlit.io/) dashboard provides comprehensive insights into **Louisiana's labor market dynamics** by leveraging data from both the [Federal Reserve Economic Data (FRED)](https://fred.stlouisfed.org/) and the [Bureau of Labor Statistics (BLS)](https://www.bls.gov/). The dashboard supports both state-level and county-level (parish) analysis—offering detailed visualizations of unemployment, employment, and labor force trends across Louisiana.
 
-[![Streamlit App](https://img.shields.io/badge/Streamlit-App-FF4B4B?logo=streamlit&logoColor=white)](https://share.streamlit.io/)  
-[![Heroku](https://img.shields.io/badge/Heroku-Deployed-blue)](https://www.heroku.com/)
+[![Streamlit App](https://img.shields.io/badge/Streamlit-App-FF4B4B?logo=streamlit&logoColor=white)](https://la-laborforce-dashboard-d2c3ec8edfe6.herokuapp.com/)  
+[![Heroku](https://img.shields.io/badge/Heroku-Deployed-blue)](https://la-laborforce-dashboard-d2c3ec8edfe6.herokuapp.com/)
 
 ---
 
