@@ -132,7 +132,7 @@ The data is dynamically fetched and merged for interactive visualization and ana
 ## 👨‍💻 Author
 
 **Asif Rasool, Ph.D.**  
-Research Economist, Southeastern Louisiana University  
+Economist, Southeastern Louisiana University  
 📍 1514 Martens Drive, Hammond, LA 70401  
 📞 985-549-3831  
 ✉️ [asif.rasool@southeastern.edu](mailto:asif.rasool@southeastern.edu)  
